@@ -1,0 +1,99 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    match /visitors/{username} {
+      allow read: if true; // anyone can see public leaderboard profiles
+      allow create: if (
+        isSignedIn() &&
+        isValidId(username) &&
+        request.resource.data.id == username &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() <= 40 &&
+        request.resource.data.highScore is number &&
+        request.resource.data.matchesPlayed is number &&
+        request.resource.data.matchesWon is number
+      );
+      allow update: if (
+        isSignedIn() &&
+        resource.data.uid == request.auth.uid &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.id == resource.data.id
+      );
+    }
+
+    match /visitors/{username}/friends/{friendUsername} {
+      // Owner can read and write, or the friend can read/write on friend additions/deletions
+      allow read, write: if (
+        isSignedIn() &&
+        (
+          get(/databases/$(database)/documents/visitors/$(username)).data.uid == request.auth.uid ||
+          get(/databases/$(database)/documents/visitors/$(friendUsername)).data.uid == request.auth.uid
+        )
+      );
+    }
+    
+    match /friendRequests/{requestId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    match /matches/{matchId} {
+      allow read: if true; // anyone can see recent global matches ticker
+      allow create: if (
+        isSignedIn() &&
+        isValidId(matchId) &&
+        request.resource.data.id == matchId &&
+        request.resource.data.visitorId is string &&
+        // Secure relational check: verify match's visitorId (the username) belongs to the authenticated user
+        get(/databases/$(database)/documents/visitors/$(request.resource.data.visitorId)).data.uid == request.auth.uid &&
+        request.resource.data.playerName is string &&
+        request.resource.data.userScore is number &&
+        request.resource.data.compScore is number &&
+        request.resource.data.ballsBowled is number
+      );
+      allow update, delete: if false; // match logs are append-only
+    }
+
+    match /rooms/{roomId} {
+      // Any authenticated user can read a room to join or play in it
+      allow read: if isSignedIn();
+      
+      // Host or player can create a room
+      allow create: if (
+        isSignedIn() &&
+        isValidId(roomId) &&
+        request.resource.data.id == roomId &&
+        request.resource.data.hostName is string &&
+        request.resource.data.hostUid == request.auth.uid &&
+        request.resource.data.teamSize is number &&
+        request.resource.data.status in ['LOBBY', 'PLAYING', 'FINISHED']
+      );
+
+      // Anyone in the room (or trying to join) can update it
+      allow update: if isSignedIn();
+
+      // Only the host can delete the room
+      allow delete: if (
+        isSignedIn() &&
+        resource.data.hostUid == request.auth.uid
+      );
+    }
+
+    match /rooms/{roomId}/chat/{chatId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    match /challenges/{challengeId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+  }
+}

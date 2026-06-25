@@ -1,0 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&family=Slackey&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Quicksand", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Slackey", "Quicksand", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  background-color: #bae6fd; /* Cute light sky blue */
+  background-image: linear-gradient(to bottom, #7dd3fc, #e0f2fe, #f0fdf4);
+  color: #1e3a8a; /* Soft kid-friendly deep blue instead of corporate black/slate */
+  margin: 0;
+  font-family: "Quicksand", sans-serif;
+  overflow-x: hidden;
+}
+
+@keyframes wiggle {
+  0% { transform: rotate(-8deg) translateY(2px); }
+  100% { transform: rotate(8deg) translateY(-4px); }
+}
+
+@keyframes scale-up {
+  0% { transform: scale(0.9) rotate(-1deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.96; transform: scale(1.05); }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes cloud-drift {
+  0% { transform: translateX(-5vw); }
+  100% { transform: translateX(105vw); }
+}
+
+.animate-wiggle {
+  animation: wiggle 0.15s ease-in-out infinite alternate;
+}
+
+.animate-scale-up {
+  animation: scale-up 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out forwards;
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 1.5s ease-in-out infinite;
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 1.8s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+  animation: spin 12s linear infinite;
+}
+
+/* 3D Toy Button Class */
+.btn-toy-green {
+  background: #22c55e;
+  border-bottom: 5px solid #15803d;
+  color: white;
+  font-weight: 800;
+  border-radius: 9999px;
+  transition: all 0.1s ease;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+.btn-toy-green:hover {
+  background: #16a34a;
+  transform: translateY(1px);
+}
+.btn-toy-green:active {
+  border-bottom-width: 0px;
+  transform: translateY(5px);
+  box-shadow: none;
+}
+
+.btn-toy-orange {
+  background: #f97316;
+  border-bottom: 5px solid #c2410c;
+  color: white;
+  font-weight: 800;
+  border-radius: 9999px;
+  transition: all 0.1s ease;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+.btn-toy-orange:hover {
+  background: #ea580c;
+  transform: translateY(1px);
+}
+.btn-toy-orange:active {
+  border-bottom-width: 0px;
+  transform: translateY(5px);
+  box-shadow: none;
+}
+
+.btn-toy-sky {
+  background: #0ea5e9;
+  border-bottom: 5px solid #0369a1;
+  color: white;
+  font-weight: 800;
+  border-radius: 20px;
+  transition: all 0.1s ease;
+}
+.btn-toy-sky:hover {
+  background: #0284c7;
+  transform: translateY(1px);
+}
+.btn-toy-sky:active {
+  border-bottom-width: 0px;
+  transform: translateY(5px);
+  box-shadow: none;
+}
+
+/* Custom fun scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+/* Wicket Impact Animations */
+@keyframes wicket-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  10% { transform: translate(-8px, -6px) rotate(-2deg); }
+  20% { transform: translate(8px, 2px) rotate(2deg); }
+  30% { transform: translate(-6px, 6px) rotate(-1deg); }
+  40% { transform: translate(8px, -2px) rotate(2deg); }
+  50% { transform: translate(-8px, 4px) rotate(-2deg); }
+  60% { transform: translate(6px, 6px) rotate(1deg); }
+  70% { transform: translate(-6px, -4px) rotate(-2deg); }
+  80% { transform: translate(6px, -2px) rotate(2deg); }
+  90% { transform: translate(-3px, 3px) rotate(-1deg); }
+}
+
+@keyframes wicket-flash {
+  0%, 100% { opacity: 0; }
+  15%, 45% { opacity: 0.6; } /* High impact red flash */
+  30%, 60% { opacity: 0.35; } /* Gold sparks */
+}
+
+.animate-wicket-shake {
+  animation: wicket-shake 0.55s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+.animate-wicket-flash {
+  animation: wicket-flash 0.65s ease-out both;
+}
+

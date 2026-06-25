@@ -1,0 +1,139 @@
+{
+  "entities": {
+    "Visitor": {
+      "title": "Visitor",
+      "description": "A website visitor profile tracking total gameplay history, name, high score, and total play time.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "highScore": { "type": "number" },
+        "matchesPlayed": { "type": "number" },
+        "matchesWon": { "type": "number" },
+        "totalPlayTimeSeconds": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "lastActive": { "type": "string" },
+        "teamMatchesPlayed": { "type": "number" },
+        "teamMatchesWon": { "type": "number" },
+        "teamMatchesLost": { "type": "number" },
+        "highestTeamScore": { "type": "number" },
+        "currentStreak": { "type": "number" },
+        "maxStreak": { "type": "number" }
+      },
+      "required": ["id", "uid", "name", "highScore", "matchesPlayed", "matchesWon", "totalPlayTimeSeconds"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Historical record of a single hand cricket match completed by a visitor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "visitorId": { "type": "string" },
+        "playerName": { "type": "string" },
+        "userScore": { "type": "number" },
+        "compScore": { "type": "number" },
+        "outcome": { "type": "string", "enum": ["win", "loss", "tie"] },
+        "ballsBowled": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "visitorId", "playerName", "userScore", "compScore", "outcome", "ballsBowled"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "A real-time multiplayer private room for team-based gameplay.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hostId": { "type": "string" },
+        "hostName": { "type": "string" },
+        "teamSize": { "type": "number" },
+        "status": { "type": "string", "enum": ["LOBBY", "PLAYING", "FINISHED"] },
+        "players": { "type": "array" },
+        "currentInnings": { "type": "number" },
+        "currentRole": { "type": "string" },
+        "firstInningsBattingTeam": { "type": "string" },
+        "teamAScore": { "type": "number" },
+        "teamBScore": { "type": "number" },
+        "teamAWickets": { "type": "number" },
+        "teamBWickets": { "type": "number" },
+        "teamABalls": { "type": "number" },
+        "teamBBalls": { "type": "number" },
+        "target": { "type": "number" },
+        "activeBatsmanId": { "type": "string" },
+        "activeBowlerId": { "type": "string" },
+        "currentThrow": { "type": "object" },
+        "lastThrowResult": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "hostId", "hostName", "teamSize", "status", "players"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A real-time text chat message sent inside a private room.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "text": { "type": "string" },
+        "team": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "text", "createdAt"]
+    },
+    "Friend": {
+      "title": "Friend",
+      "description": "A linked friend profile under a visitor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "addedAt": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Challenge": {
+      "title": "Challenge",
+      "description": "A real-time direct match challenge sent from one player to another.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fromUser": { "type": "string" },
+        "fromName": { "type": "string" },
+        "toUser": { "type": "string" },
+        "roomCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "ACCEPTED", "DECLINED"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "fromUser", "fromName", "toUser", "roomCode", "status"]
+    }
+  },
+  "firestore": {
+    "/visitors/{visitorId}": {
+      "schema": "Visitor",
+      "description": "Stored visitor statistics"
+    },
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Stored match history items"
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Stored real-time multiplayer private rooms"
+    },
+    "/rooms/{roomId}/chat/{chatId}": {
+      "schema": "ChatMessage",
+      "description": "Stored real-time chat messages inside a room"
+    },
+    "/visitors/{visitorId}/friends/{friendId}": {
+      "schema": "Friend",
+      "description": "Stored friends list for a visitor"
+    },
+    "/challenges/{challengeId}": {
+      "schema": "Challenge",
+      "description": "Stored direct match challenges"
+    }
+  }
+}
