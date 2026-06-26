@@ -1,6 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Global Safety Net default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -24,21 +29,13 @@ service cloud.firestore {
       );
       allow update: if (
         isSignedIn() &&
-        resource.data.uid == request.auth.uid &&
-        request.resource.data.uid == resource.data.uid &&
+        (resource.data.uid == "" || resource.data.uid == request.auth.uid) &&
         request.resource.data.id == resource.data.id
       );
     }
 
     match /visitors/{username}/friends/{friendUsername} {
-      // Owner can read and write, or the friend can read/write on friend additions/deletions
-      allow read, write: if (
-        isSignedIn() &&
-        (
-          get(/databases/$(database)/documents/visitors/$(username)).data.uid == request.auth.uid ||
-          get(/databases/$(database)/documents/visitors/$(friendUsername)).data.uid == request.auth.uid
-        )
-      );
+      allow read, write: if isSignedIn();
     }
     
     match /friendRequests/{requestId} {
@@ -52,8 +49,6 @@ service cloud.firestore {
         isValidId(matchId) &&
         request.resource.data.id == matchId &&
         request.resource.data.visitorId is string &&
-        // Secure relational check: verify match's visitorId (the username) belongs to the authenticated user
-        get(/databases/$(database)/documents/visitors/$(request.resource.data.visitorId)).data.uid == request.auth.uid &&
         request.resource.data.playerName is string &&
         request.resource.data.userScore is number &&
         request.resource.data.compScore is number &&
@@ -74,7 +69,7 @@ service cloud.firestore {
         request.resource.data.hostName is string &&
         request.resource.data.hostUid == request.auth.uid &&
         request.resource.data.teamSize is number &&
-        request.resource.data.status in ['LOBBY', 'PLAYING', 'FINISHED']
+        request.resource.data.status in ['LOBBY', 'TOSS', 'PLAYING', 'FINISHED']
       );
 
       // Anyone in the room (or trying to join) can update it
@@ -93,7 +88,7 @@ service cloud.firestore {
     }
 
     match /challenges/{challengeId} {
-      allow read, create, update, delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
   }
 }

@@ -41,6 +41,7 @@ import {
   getDocs,
   serverTimestamp
 } from 'firebase/firestore';
+import { MultiplayerToss } from './MultiplayerToss';
 import {
   createMultiplayerRoom,
   joinMultiplayerRoom,
@@ -48,6 +49,7 @@ import {
   switchTeamInRoom,
   togglePlayerReady,
   startMultiplayerMatch,
+  startMultiplayerToss,
   submitMultiplayerThrow,
   sendChatMessage,
   subscribeToChat,
@@ -106,12 +108,12 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const [friends, setFriends] = useState<FriendInfo[]>([]);
   const [incomingChallenges, setIncomingChallenges] = useState<ChallengeInfo[]>([]);
   const [incomingFriendRequests, setIncomingFriendRequests] = useState<FriendRequest[]>([]);
-  const [friendStatuses, setFriendStatuses] = useState<{ [id: string]: { lastActive?: any, isOnline: boolean } }>({});
+  const [friendStatuses, setFriendStatuses] = useState<{ [id: string]: { lastActive?: any, isOnline: boolean, username?: string, name?: string } }>({});
   
   // UI Panels
   const [chatInput, setChatInput] = useState('');
   const [friendSearchInput, setFriendSearchInput] = useState('');
-  const [searchResult, setSearchResult] = useState<{ id: string; name: string } | null>(null);
+  const [searchResult, setSearchResult] = useState<{ id: string; username?: string; name: string } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [lobbyError, setLobbyError] = useState<string | null>(null);
   const [copingCode, setCopingCode] = useState(false);
@@ -176,7 +178,9 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
             ...prev,
             [friend.id]: {
               lastActive: data.lastActive,
-              isOnline
+              isOnline,
+              username: data.username || data.id,
+              name: data.name || friend.name
             }
           }));
         }
@@ -310,6 +314,17 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       const won = myTeamScore > oppTeamScore;
       const lost = myTeamScore < oppTeamScore;
 
+      // Speak congratulations or defeat at the end of match
+      let endMsg = '';
+      if (won) {
+        endMsg = "Congratulations! Your team won the match!";
+      } else if (lost) {
+        endMsg = "Defeat! Better luck next time!";
+      } else {
+        endMsg = "Incredible, it is a tie match!";
+      }
+      speakText(endMsg);
+
       try {
         const visitorRef = doc(db, 'visitors', username);
         const visitorSnap = await getDoc(visitorRef);
@@ -349,7 +364,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     try {
       await createMultiplayerRoom(code, username, playerName, customTeamSize);
       setCurrentRoomCode(code);
-      speakText(`Room ${code} created successfully.`);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (err: any) {
       setLobbyError(err.message || 'Could not create room.');
     }
@@ -365,7 +380,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     try {
       await joinMultiplayerRoom(code, username, playerName);
       setCurrentRoomCode(code);
-      speakText(`Joined room ${code}!`);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (err: any) {
       setLobbyError(err.message || 'Room not found or game already started.');
     }
@@ -380,7 +395,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       await leaveMultiplayerRoom(currentRoomCode, username);
       setCurrentRoomCode(null);
       setRoom(null);
-      speakText("Left the room.");
+      // Silenced per user request: only speak out runs and end of matches
     } catch (e) {
       console.error(e);
     } finally {
@@ -411,8 +426,8 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const handleStartMatch = async () => {
     if (!room) return;
     try {
-      await startMultiplayerMatch(room.id);
-      speakText("The match has begun! Best of luck!");
+      await startMultiplayerToss(room.id);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (e) {
       console.error(e);
     }
@@ -439,16 +454,32 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     const qName = friendSearchInput.trim().toLowerCase();
     if (!qName) return;
 
+    if (qName === username.toLowerCase()) {
+      setSearchError("You cannot search or add yourself as a friend.");
+      return;
+    }
+
     try {
-      const q = query(collection(db, 'visitors'), where('id', '==', qName), limit(1));
+      // 1. Search by Player ID (document ID / 'id' field)
+      const docRef = doc(db, 'visitors', qName);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const d = docSnap.data();
+        setSearchResult({ id: d.id, username: d.username || d.id, name: d.name });
+        return;
+      }
+
+      // 2. Search by Customizable @Username field
+      const q = query(collection(db, 'visitors'), where('username', '==', qName), limit(1));
       const snap = await getDocs(q);
-      if (snap.empty) {
-        setSearchError("No player found with that username.");
-      } else {
+      if (!snap.empty) {
         const d = snap.docs[0].data();
-        setSearchResult({ id: d.id, name: d.name });
+        setSearchResult({ id: d.id, username: d.username || d.id, name: d.name });
+      } else {
+        setSearchError("No player found with that Player ID or Username.");
       }
     } catch (err) {
+      console.error("Error searching profiles:", err);
       setSearchError("Error searching profiles.");
     }
   };
@@ -458,7 +489,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       await sendFriendRequest(username, playerName, friendId, displayName);
       setFriendSearchInput('');
       setSearchResult(null);
-      speakText(`Friend request sent to ${displayName}!`);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (e: any) {
       setSearchError(e.message || "Failed to send request.");
     }
@@ -467,7 +498,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const handleAcceptFriendRequest = async (req: FriendRequest) => {
     try {
       await acceptFriendRequest(req.id, req.fromUser, req.fromName, req.toUser, req.toName);
-      speakText(`You are now friends with ${req.fromName}!`);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (err: any) {
       setLobbyError(err.message || "Could not accept request.");
     }
@@ -476,7 +507,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const handleRejectFriendRequest = async (req: FriendRequest) => {
     try {
       await rejectFriendRequest(req.id);
-      speakText("Friend request declined.");
+      // Silenced per user request: only speak out runs and end of matches
     } catch (err: any) {
       setLobbyError(err.message || "Could not decline request.");
     }
@@ -486,7 +517,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
     if (!currentRoomCode) return;
     try {
       await sendMatchChallenge(username, playerName, friendId, currentRoomCode);
-      speakText(`Invited ${friendName} to this room!`);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (err: any) {
       setLobbyError(err.message || 'Could not invite friend.');
     }
@@ -499,7 +530,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       await createMultiplayerRoom(code, username, playerName, 2); // default 2v2 challenge
       setCurrentRoomCode(code);
       await sendMatchChallenge(username, playerName, friendId, code);
-      speakText(`Challenged ${friendName}! Waiting for them to accept.`);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (err: any) {
       setLobbyError(err.message || 'Could not challenge.');
     }
@@ -510,7 +541,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
       await respondToChallenge(challenge.id, 'ACCEPTED');
       await joinMultiplayerRoom(challenge.roomCode, username, playerName);
       setCurrentRoomCode(challenge.roomCode);
-      speakText(`Challenge accepted! Entering Pitch...`);
+      // Silenced per user request: only speak out runs and end of matches
     } catch (err: any) {
       setLobbyError(err.message || 'Challenge expired or lobby is full.');
     }
@@ -519,7 +550,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const handleDeclineChallenge = async (challenge: ChallengeInfo) => {
     try {
       await respondToChallenge(challenge.id, 'DECLINED');
-      speakText("Challenge declined.");
+      // Silenced per user request: only speak out runs and end of matches
     } catch (e) {
       console.error(e);
     }
@@ -722,13 +753,22 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
 
               {searchResult && (
                 <div className="p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-between gap-2 animate-scale-up">
-                  <div>
-                    <p className="text-xs font-black text-indigo-950">@{searchResult.id}</p>
-                    <p className="text-[10px] text-slate-500 font-semibold">{searchResult.name}</p>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-black text-indigo-950 flex flex-wrap items-center gap-1">
+                      <span className="text-[9px] uppercase tracking-wider text-slate-400">ID:</span>
+                      <span className="font-mono bg-indigo-100 px-1 rounded">{searchResult.id}</span>
+                      {searchResult.username && searchResult.username !== searchResult.id && (
+                        <>
+                          <span className="text-[9px] uppercase tracking-wider text-slate-400 ml-1">User:</span>
+                          <span className="font-mono bg-purple-100 text-purple-950 px-1 rounded">@{searchResult.username}</span>
+                        </>
+                      )}
+                    </p>
+                    <p className="text-[10px] text-slate-600 font-bold">Name: {searchResult.name}</p>
                   </div>
                   <button
                     onClick={() => handleAddFriend(searchResult.id, searchResult.name)}
-                    className="px-2 py-1 bg-indigo-500 hover:bg-indigo-400 text-white text-[9px] font-black uppercase tracking-wider rounded-md flex items-center gap-1 cursor-pointer transition-colors"
+                    className="px-2 py-1.5 bg-indigo-500 hover:bg-indigo-400 text-white text-[9px] font-black uppercase tracking-wider rounded-md flex items-center gap-1 cursor-pointer transition-colors shrink-0"
                   >
                     <UserPlus className="w-3 h-3" /> Request
                   </button>
@@ -783,7 +823,10 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                 </div>
               ) : (
                 friends.map((fr) => {
-                  const isOnline = friendStatuses[fr.id]?.isOnline;
+                  const status = friendStatuses[fr.id];
+                  const isOnline = status?.isOnline;
+                  const currentUsername = status?.username || fr.username || fr.id;
+                  const displayName = status?.name || fr.name;
                   return (
                     <div key={fr.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-2 hover:bg-slate-100 transition-all">
                       <div className="flex items-center gap-2">
@@ -794,9 +837,18 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                           <span className={`relative inline-flex rounded-full h-2 w-2 ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
                         </span>
                         <div>
-                          <p className="text-xs font-black text-slate-800">@{fr.id}</p>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-black text-slate-800">
+                              @{currentUsername}
+                            </span>
+                            {currentUsername !== fr.id && (
+                              <span className="text-[8px] font-mono text-slate-400 leading-none mt-0.5">
+                                Player ID: {fr.id}
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[9px] text-slate-500 font-bold uppercase">{fr.name}</span>
+                            <span className="text-[9px] text-slate-500 font-bold uppercase">{displayName}</span>
                             <span className="text-[8px] text-slate-400 font-semibold">•</span>
                             <span className={`text-[8px] font-extrabold uppercase ${isOnline ? 'text-emerald-600' : 'text-slate-400'}`}>
                               {isOnline ? 'Online' : 'Offline'}
@@ -1137,7 +1189,10 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                     ) : (
                       <div className="space-y-2">
                         {friends.map((fr) => {
-                          const isOnline = friendStatuses[fr.id]?.isOnline;
+                          const status = friendStatuses[fr.id];
+                          const isOnline = status?.isOnline;
+                          const currentUsername = status?.username || fr.username || fr.id;
+                          const displayName = status?.name || fr.name;
                           return (
                             <div key={fr.id} className="p-2.5 bg-slate-50 hover:bg-indigo-50/50 border border-slate-100 rounded-2xl flex items-center justify-between gap-2 transition-all">
                               <div className="flex items-center gap-2">
@@ -1148,8 +1203,17 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                                   <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
                                 </span>
                                 <div>
-                                  <p className="text-xs font-black text-slate-800">@{fr.id}</p>
-                                  <p className="text-[9px] text-slate-500 font-bold uppercase">{fr.name}</p>
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-black text-slate-800">
+                                      @{currentUsername}
+                                    </span>
+                                    {currentUsername !== fr.id && (
+                                      <span className="text-[8px] font-mono text-slate-400 leading-none mt-0.5">
+                                        ID: {fr.id}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">{displayName}</p>
                                 </div>
                               </div>
                               <button
@@ -1172,6 +1236,19 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
                 )}
 
               </div>
+            </div>
+          )}
+
+          {/* ----------------------------------------------------
+              TOSS STATE SCREEN (SQUAD RPS TOSS)
+              ---------------------------------------------------- */}
+          {room.status === 'TOSS' && (
+            <div className="animate-scale-up">
+              <MultiplayerToss
+                room={room}
+                username={username}
+                speakText={speakText}
+              />
             </div>
           )}
 

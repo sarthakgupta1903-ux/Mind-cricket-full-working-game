@@ -12,6 +12,7 @@ import { HandGestureSvg } from './components/HandGestureSvg';
 import { RecentBallsLog } from './components/RecentBallsLog';
 import { ResultDetails } from './components/ResultDetails';
 import { VisitorsDashboard } from './components/VisitorsDashboard';
+import { Friends } from './components/Friends';
 import { MultiplayerLobby } from './components/MultiplayerLobby';
 import {
   onAuthStateChanged,
@@ -28,7 +29,9 @@ import {
   recordMatchToFirestore,
   checkUsernameAvailable,
   registerUserProfile,
-  getUserProfileByUid
+  getUserProfileByUid,
+  isPlayerIdAvailable,
+  isUsernameAvailable
 } from './lib/visitorTracker';
 import {
   playDotBallSound,
@@ -49,8 +52,163 @@ import {
   ChevronRight,
   ShieldCheck,
   User2,
-  Activity
+  Activity,
+  Bot
 } from 'lucide-react';
+
+const SLEDGES = {
+  friendly: {
+    preMatch: [
+      "Let's have a great match! Good luck!",
+      "May the best mind win! Have fun!",
+      "Excited to play with you! Show me your best!"
+    ],
+    scoringFast: [
+      "Nice shot!",
+      "Good innings.",
+      "You're seeing the ball well today.",
+      "Beautiful batting!",
+      "Runs flowing nicely!"
+    ],
+    dominating: [
+      "Tough delivery! Keep trying!",
+      "Pressure is building, but you've got this!",
+      "Focus on the next ball, you can do it!"
+    ],
+    survivingMany: [
+      "You're harder to dismiss than I expected.",
+      "Excellent defense, lovely partnership!",
+      "Terrific resistance here."
+    ],
+    patternRepeat: [
+      "Ah, trying a steady strategy?",
+      "Sticking with your favorite number I see!"
+    ],
+    patternWicket: [
+      "Well bowled! Got there in the end.",
+      "Excellent ball! Hard luck to the batter."
+    ],
+    wicket: [
+      "Got him! What a delivery!",
+      "Wicket! Great battle out there.",
+      "A beauty! Hard luck, next batsman in!"
+    ],
+    fifty: [
+      "What a milestone! Magnificent fifty!",
+      "Superb batting! Half-century up!"
+    ],
+    gameWon: [
+      "Incredible game! You played brilliantly, congrats!",
+      "You earned this victory! Fantastic skills!"
+    ],
+    gameLost: [
+      "Great match! I got lucky this time, well played!",
+      "What a thriller! Thanks for a beautiful game!"
+    ]
+  },
+  competitive: {
+    preMatch: [
+      "Hope you're warmed up.",
+      "Let's see what you've got.",
+      "Time to test your reading skills."
+    ],
+    scoringFast: [
+      "😬 Okay... that's a bit concerning.",
+      "😅 Can we pretend that run didn't happen?",
+      "You're in good touch today. Time to change my bowling.",
+      "Nice hit. Won't be that easy next ball."
+    ],
+    dominating: [
+      "😎 Scoreboard doesn't look good for you.",
+      "Pressure's building.",
+      "Gears are turning, need to break this partnership."
+    ],
+    survivingMany: [
+      "This partnership is getting annoying.",
+      "Let's see if you can keep this concentration up.",
+      "Solid block. But the pressure is rising."
+    ],
+    patternRepeat: [
+      "👀 I can see what you're doing...",
+      "🧠 Predictable.",
+      "🤔 You really like that number, don't you?"
+    ],
+    patternWicket: [
+      "🎉 Called it!",
+      "🏏 That's what happens when you get predictable.",
+      "🤖 Pattern detected. Wicket collected."
+    ],
+    wicket: [
+      "Yes! Massive wicket for us!",
+      "Bowled! That was a crucial breakthrough!",
+      "Out! The plan worked perfectly!"
+    ],
+    fifty: [
+      "Solid fifty, but the job isn't done yet.",
+      "That's a good fifty. Time to raise the intensity!"
+    ],
+    gameWon: [
+      "Good game! You outsmarted me in the key moments.",
+      "Well played! A well-deserved win today."
+    ],
+    gameLost: [
+      "Got you this time! Let's go for a rematch.",
+      "Yes! Match in the bag. Better luck next time!"
+    ]
+  },
+  savage: {
+    preMatch: [
+      "I've beaten better players than you.",
+      "Bat first, excuses later.",
+      "Hostel champion? Let's verify that.",
+      "Prepare to be outmatched."
+    ],
+    scoringFast: [
+      "My grandma bowls faster.",
+      "Are you playing or calculating taxes?",
+      "That's not a strategy, that's panic.",
+      "Pure luck. Try doing that again."
+    ],
+    dominating: [
+      "Need a miracle from here.",
+      "Did you forget how to score?",
+      "This is getting embarrassing.",
+      "You walked right into that one."
+    ],
+    survivingMany: [
+      "Are you trying to bore me to death?",
+      "Still here? I must be getting soft.",
+      "This is Mind Cricket, not a test match from 1950!"
+    ],
+    patternRepeat: [
+      "😏 Same trick again?",
+      "🎯 Got your pattern.",
+      "😎 Thanks for the free scouting report."
+    ],
+    patternWicket: [
+      "😏 Too easy.",
+      "🤖 Predictable script. Wicket collected.",
+      "Did you really think that would work again?"
+    ],
+    wicket: [
+      "Hahaha! Back to the pavilion!",
+      "Absolute classic. Totally outplayed!",
+      "Did you even see that one coming?"
+    ],
+    fifty: [
+      "Fifty runs? Don't get too happy, you're still going down.",
+      "Wow, a fifty. Want a medal or can we continue?"
+    ],
+    gameWon: [
+      "Beginner's luck. Rematch right now, let's see.",
+      "Okay, maybe you're not completely hopeless."
+    ],
+    gameLost: [
+      "Stick to board games, buddy.",
+      "Easiest win of my life! Next please!"
+    ]
+  }
+};
 
 export default function App() {
   // --- STATE DECLARATIONS ---
@@ -63,10 +221,12 @@ export default function App() {
   // Auth States
   const [authUser, setAuthUser] = useState<any>(null);
   const [authUsername, setAuthUsername] = useState<string | null>(null);
+  const [currentUserUsername, setCurrentUserUsername] = useState<string | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [usernamePrompt, setUsernamePrompt] = useState(false);
   
   // Registration States
+  const [chosenPlayerId, setChosenPlayerId] = useState('');
   const [chosenUsername, setChosenUsername] = useState('');
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
@@ -100,6 +260,7 @@ export default function App() {
           const profile = await getUserProfileByUid(user.uid);
           if (profile) {
             setAuthUsername(profile.id);
+            setCurrentUserUsername(profile.username || profile.id);
             setStats({
               name: profile.name,
               highScore: profile.highScore || 0,
@@ -110,6 +271,7 @@ export default function App() {
             setUsernamePrompt(false);
           } else {
             setAuthUsername(null);
+            setCurrentUserUsername(null);
             setUsernamePrompt(true);
           }
         } catch (e) {
@@ -181,6 +343,10 @@ export default function App() {
   const [ballOutcomeText, setBallOutcomeText] = useState('');
   const [wicketImpact, setWicketImpact] = useState(false);
   
+  // Computer Personality & Sledge States
+  const [personality, setPersonality] = useState<'silent' | 'friendly' | 'competitive' | 'savage'>('competitive');
+  const [compSledge, setCompSledge] = useState<string | null>(null);
+  
   // High score / PB breached flags for results celebration
   const [highScoreBreached, setHighScoreBreached] = useState(false);
   const [bowlingRecordBreached, setBowlingRecordBreached] = useState(false);
@@ -230,14 +396,32 @@ export default function App() {
   };
 
   const handleRegisterUsername = async () => {
+    const cleanPlayerId = chosenPlayerId.trim();
     const cleanUsername = chosenUsername.trim().toLowerCase();
-    if (!cleanUsername) {
-      setRegistrationError("Username cannot be empty.");
+    
+    if (!cleanPlayerId) {
+      setRegistrationError("Permanent Player ID cannot be empty.");
       return;
     }
 
-    const isValid = /^[a-zA-Z0-9_-]+$/.test(cleanUsername) && cleanUsername.length >= 3 && cleanUsername.length <= 20;
-    if (!isValid) {
+    if (!cleanUsername) {
+      setRegistrationError("Customizable @Username cannot be empty.");
+      return;
+    }
+
+    const isIdValid = /^\d{8}$/.test(cleanPlayerId);
+    if (!isIdValid) {
+      setRegistrationError("Player ID must be exactly an 8-digit numeric number (e.g. 12345678).");
+      return;
+    }
+
+    if (cleanPlayerId === cleanUsername) {
+      setRegistrationError("Player ID and Username cannot be the same.");
+      return;
+    }
+
+    const isUserValid = /^[a-zA-Z0-9_-]+$/.test(cleanUsername) && cleanUsername.length >= 3 && cleanUsername.length <= 20;
+    if (!isUserValid) {
       setRegistrationError("Username must be between 3 and 20 alphanumeric characters, hyphens, or underscores.");
       return;
     }
@@ -245,15 +429,24 @@ export default function App() {
     setCheckingAvailability(true);
     setRegistrationError(null);
     try {
-      const isAvailable = await checkUsernameAvailable(cleanUsername);
-      if (!isAvailable) {
-        setRegistrationError("This username is already taken. Try another!");
+      if (!authUser) {
+        setRegistrationError("You must be logged in to register.");
         setCheckingAvailability(false);
         return;
       }
 
-      if (!authUser) {
-        setRegistrationError("You must be logged in to register.");
+      // 1. Check if the permanent Player ID is available
+      const idAvailable = await isPlayerIdAvailable(cleanPlayerId);
+      if (!idAvailable) {
+        setRegistrationError("This Permanent Player ID is already taken. Please try another!");
+        setCheckingAvailability(false);
+        return;
+      }
+
+      // 2. Check if the customizable Username is available
+      const userAvailable = await isUsernameAvailable(cleanUsername);
+      if (!userAvailable) {
+        setRegistrationError("This Customizable @Username is already taken. Please try another!");
         setCheckingAvailability(false);
         return;
       }
@@ -265,10 +458,11 @@ export default function App() {
         matchesWon: stats.matchesWon || 0,
       };
 
-      const displayName = authUser.displayName || chosenUsername;
-      await registerUserProfile(cleanUsername, authUser.uid, displayName, initialStats);
+      const displayName = authUser.displayName || cleanUsername;
+      await registerUserProfile(cleanPlayerId, cleanUsername, authUser.uid, displayName, initialStats);
       
-      setAuthUsername(cleanUsername);
+      setAuthUsername(cleanPlayerId);
+      setCurrentUserUsername(cleanUsername);
       setStats({
         name: displayName,
         highScore: initialStats.highScore,
@@ -408,7 +602,18 @@ export default function App() {
       playerName: stats.name,
     }));
     
-    speakText(`Let's play! Hand cricket lock is active. You are first ${initialRole === 'bat' ? 'batting' : 'bowling'}!`);
+    let preSledge: string | null = null;
+    if (personality !== 'silent') {
+      const arr = SLEDGES[personality].preMatch;
+      preSledge = arr[Math.floor(Math.random() * arr.length)];
+    }
+    setCompSledge(preSledge);
+    
+    let tossMsg = `Let's play! Hand cricket lock is active. You are first ${initialRole === 'bat' ? 'batting' : 'bowling'}!`;
+    if (preSledge) {
+      tossMsg += ` ${preSledge}`;
+    }
+    // Silenced per user request: only speak out runs and end of matches
     setGamePhase('FIRST_INNINGS');
   };
 
@@ -543,24 +748,86 @@ export default function App() {
         }
       }
 
+      // Personality-driven AI Commentary / Sledge Determination
+      let triggeredSledge: string | null = null;
+      if (personality !== 'silent') {
+        const poolType = (p: typeof personality) => SLEDGES[p];
+        const getSledgeText = (category: keyof typeof SLEDGES.friendly) => {
+          const arr = poolType(personality)[category];
+          if (!arr || arr.length === 0) return null;
+          return arr[Math.floor(Math.random() * arr.length)];
+        };
+
+        // Determine if player repeated the same number 3+ times (pattern)
+        const playerHistory = currentInningsBalls.map((b) => b.userChoice);
+        const currentPlayerHistory = [...playerHistory, userChoice];
+        const len = currentPlayerHistory.length;
+        const isPlayerRepeating = len >= 3 &&
+          currentPlayerHistory[len - 1] === currentPlayerHistory[len - 2] &&
+          currentPlayerHistory[len - 1] === currentPlayerHistory[len - 3];
+
+        if (isPlayerRepeating) {
+          if (isWicket) {
+            triggeredSledge = getSledgeText('patternWicket');
+          } else {
+            triggeredSledge = getSledgeText('patternRepeat');
+          }
+        } else if (isWicket) {
+          triggeredSledge = getSledgeText('wicket');
+        } else {
+          // Check for milestones (half-century / crossing 50)
+          const prevScore = m.currentRole === 'bat' ? m.userScore : m.compScore;
+          const nextScore = m.currentRole === 'bat' ? nextUserScore : nextCompScore;
+          if (prevScore < 50 && nextScore >= 50) {
+            triggeredSledge = getSledgeText('fifty');
+          } else if (nextBallsBowled > 0 && nextBallsBowled % 12 === 0) {
+            // Player survives many deliveries
+            triggeredSledge = getSledgeText('survivingMany');
+          } else if (runsAdded === 6 || runsAdded === 4) {
+            // Scoring fast trigger (35% chance)
+            if (Math.random() < 0.35) {
+              triggeredSledge = getSledgeText('scoringFast');
+            }
+          } else {
+            // 12% random sledge chance
+            if (Math.random() < 0.12) {
+              const isUserLeading = m.currentRole === 'bat'
+                ? (nextUserScore > nextCompScore + 10)
+                : (nextUserScore < nextCompScore - 10);
+              
+              if (isUserLeading) {
+                triggeredSledge = getSledgeText('scoringFast');
+              } else {
+                triggeredSledge = getSledgeText('dominating');
+              }
+            }
+          }
+        }
+      }
+
+      setCompSledge(triggeredSledge);
+
       // Voice TTS trigger
+      let speakMsg = '';
       if (isWicket) {
         if (isUserBatting) {
           if (nextUserWickets >= m.teamSize) {
-            speakText(`Oh no! All out! Your team scored ${nextUserScore} runs.`);
+            speakMsg = `Oh no! All out! Your team scored ${nextUserScore} runs.`;
           } else {
-            speakText(`Out! That is wicket number ${nextUserWickets}. Batter number ${nextUserWickets + 1} is coming to the crease.`);
+            speakMsg = `Out!`;
           }
         } else {
           if (nextCompWickets >= m.teamSize) {
-            speakText(`Out! Computer is all out for ${nextCompScore} runs.`);
+            speakMsg = `Out! Computer is all out for ${nextCompScore} runs.`;
           } else {
-            speakText(`Wicket! Computer lost ${nextCompWickets} wickets. Next computer batsman is in.`);
+            speakMsg = `Wicket!`;
           }
         }
       } else {
-        speakText(runsAdded === 0 ? 'Dot ball' : `${runsAdded} run${runsAdded > 1 ? 's' : ''}`);
+        speakMsg = runsAdded === 0 ? 'Dot ball.' : `${runsAdded} run${runsAdded > 1 ? 's' : ''}.`;
       }
+
+      speakText(speakMsg);
 
       // Play high-quality synthesized game sounds
       if (soundEnabled) {
@@ -631,8 +898,9 @@ export default function App() {
       showBallResult: false,
     }));
     setBallOutcomeText('');
+    setCompSledge(null);
     setGamePhase('SECOND_INNINGS');
-    speakText(`The Goal is ${targetSet} runs. Throw with skill!`);
+    // Silenced per user request: only speak out runs and end of matches
   };
 
   // --- CORE SYSTEM: CHECK GAME-OVER MILESTONES ---
@@ -726,16 +994,34 @@ export default function App() {
     setBowlingRecordBreached(bowlBreached);
     setGamePhase('RESULT');
 
+    let endOfMatchMsg = '';
+    let endSledge: string | null = null;
+    
+    if (personality !== 'silent') {
+      const poolType = (p: typeof personality) => SLEDGES[p];
+      const getSledgeText = (category: keyof typeof SLEDGES.friendly) => {
+        const arr = poolType(personality)[category];
+        if (!arr || arr.length === 0) return null;
+        return arr[Math.floor(Math.random() * arr.length)];
+      };
+      
+      endSledge = isUserWinner ? getSledgeText('gameWon') : getSledgeText('gameLost');
+    }
+    
+    setCompSledge(endSledge);
+
     if (isUserWinner) {
-      speakText('Hurray! You won the Mind Cricket tournament!');
+      endOfMatchMsg = 'Hurray! You won the Mind Cricket tournament!';
       if (soundEnabled) playVictorySound();
     } else if (match.userScore === match.compScore) {
-      speakText('Incredible, it is a tie match!');
+      endOfMatchMsg = 'Incredible, it is a tie match!';
       if (soundEnabled) playLoseSound();
     } else {
-      speakText('Great try! Computer took this match.');
+      endOfMatchMsg = 'Great try! Computer took this match.';
       if (soundEnabled) playLoseSound();
     }
+    
+    speakText(endOfMatchMsg);
   };
 
   // Restarts game state
@@ -745,6 +1031,7 @@ export default function App() {
     setHighScoreBreached(false);
     setBowlingRecordBreached(false);
     setBallOutcomeText('');
+    setCompSledge(null);
     setGamePhase('WELCOME');
   };
 
@@ -885,15 +1172,37 @@ export default function App() {
                   Claim Your Player Name
                 </h2>
                 <p className="text-xs font-bold text-slate-600 max-w-md mx-auto leading-relaxed">
-                  Every player in the stadium must have a unique username. This acts as your permanent primary key and identity on the Global Leaderboard.
+                  Setup your global stadium credentials. Player IDs must be a permanent, 8-digit numeric number and are used for adding friends. Usernames can be changed once every 30 days and must be different from your Player ID.
                 </p>
               </div>
 
-              <div className="max-w-xs mx-auto text-left space-y-2.5">
-                <label className="text-[10px] font-black uppercase text-amber-800 block">
-                  Choose a unique username:
-                </label>
-                <div className="relative">
+              <div className="max-w-xs mx-auto text-left space-y-4">
+                {/* Permanent Player ID */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-amber-800 block">
+                    1. Choose an 8-Digit Numeric Player ID:
+                  </label>
+                  <input
+                    type="text"
+                    value={chosenPlayerId}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 8);
+                      setChosenPlayerId(val);
+                      setRegistrationError(null);
+                    }}
+                    placeholder="e.g. 12345678"
+                    className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-amber-400 text-blue-900 shadow-xs animate-none"
+                  />
+                  <p className="text-[8px] text-slate-400 font-bold leading-relaxed uppercase">
+                    🔒 8-Digit Numeric. Permanent. Cannot be same as Username.
+                  </p>
+                </div>
+
+                {/* Customizable Username */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-amber-800 block">
+                    2. Choose a Customizable @Username:
+                  </label>
                   <input
                     type="text"
                     value={chosenUsername}
@@ -901,9 +1210,12 @@ export default function App() {
                       setChosenUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20));
                       setRegistrationError(null);
                     }}
-                    placeholder="e.g. virat_45"
-                    className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-amber-400 text-blue-900 shadow-xs"
+                    placeholder="e.g. virat_the_king"
+                    className="w-full px-4 py-2.5 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-sm focus:outline-none focus:border-amber-400 text-blue-900 shadow-xs"
                   />
+                  <p className="text-[8px] text-slate-400 font-bold leading-relaxed uppercase">
+                    ⚙️ Can be changed once every 30 days.
+                  </p>
                 </div>
                 
                 {registrationError && (
@@ -912,8 +1224,8 @@ export default function App() {
 
                 <button
                   onClick={handleRegisterUsername}
-                  disabled={checkingAvailability || !chosenUsername}
-                  className="w-full mt-2 py-3.5 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-300 text-white font-black text-xs uppercase tracking-wider rounded-xl border-b-4 border-amber-750 disabled:border-b-0 disabled:translate-y-0 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                  disabled={checkingAvailability || !chosenPlayerId || !chosenUsername}
+                  className="w-full mt-2 py-3.5 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-300 text-white font-black text-xs uppercase tracking-wider rounded-xl border-b-4 border-amber-700 disabled:border-b-0 disabled:translate-y-0 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
                 >
                   {checkingAvailability ? (
                     <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
@@ -924,7 +1236,7 @@ export default function App() {
               </div>
 
               <p className="text-[9px] text-slate-400 font-bold max-w-xs mx-auto leading-relaxed">
-                Usernames can contain letters, numbers, hyphens, and underscores (3-20 characters). Progress from local play will be merged.
+                Player ID must be exactly 8 digits. Username can contain letters, numbers, hyphens, and underscores (3-20 characters). Progress from local play will be merged.
               </p>
             </div>
           )}
@@ -1049,6 +1361,61 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Computer Personality selector */}
+              <div className="max-w-md mx-auto p-4 bg-purple-50 rounded-2xl border-2 border-purple-100 text-left space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black uppercase text-purple-800 flex items-center gap-1.5">
+                    <Bot className="w-4 h-4" /> 🤖 Computer Personality & commentary:
+                  </label>
+                  <span className="text-[8px] font-black uppercase tracking-wider text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded">
+                    Level Up Play
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { id: 'silent', label: '🔇 Silent', subtitle: 'Quiet game' },
+                    { id: 'friendly', label: '🌸 Gentle', subtitle: 'Encouraging' },
+                    { id: 'competitive', label: '🔥 Rival', subtitle: 'Classic sport' },
+                    { id: 'savage', label: '💀 Hostel', subtitle: 'Hostel level' },
+                  ].map((pOpt) => {
+                    const isSelected = personality === pOpt.id;
+                    return (
+                      <button
+                        key={pOpt.id}
+                        type="button"
+                        onClick={() => {
+                          setPersonality(pOpt.id as any);
+                          let speakGreeting = '';
+                          if (pOpt.id === 'silent') speakGreeting = 'Silent mode activated.';
+                          else if (pOpt.id === 'friendly') speakGreeting = "Gentle mode. I'll be nice!";
+                          else if (pOpt.id === 'competitive') speakGreeting = "Competitive spirit on. Good luck!";
+                          else if (pOpt.id === 'savage') speakGreeting = "Hostel style savage mode! Batting first, excuses later!";
+                          // Silenced per user request: only speak out runs and end of matches
+                        }}
+                        className={`p-2 rounded-xl border transition-all text-center flex flex-col items-center justify-center cursor-pointer ${
+                          isSelected
+                            ? 'bg-purple-600 border-purple-750 text-white shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="text-xs font-black block leading-tight">{pOpt.label}</span>
+                        <span className={`text-[7px] uppercase font-bold block leading-none mt-1 ${isSelected ? 'text-purple-100' : 'text-slate-400'}`}>
+                          {pOpt.subtitle}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                <p className="text-[9px] text-slate-500 font-semibold leading-relaxed pl-0.5">
+                  {personality === 'silent' && "No sledges or live feedback. Pure focus."}
+                  {personality === 'friendly' && "Computer offers wholesome tips and nice remarks!"}
+                  {personality === 'competitive' && "Computer shows sharp focus, matches tactics, and witty sports sledges."}
+                  {personality === 'savage' && "Hostel-style classic, playful savage banter. Don't take it personally!"}
+                </p>
+              </div>
+
               <div className="max-w-md mx-auto pt-1 space-y-3">
                 <button
                   onClick={() => {
@@ -1057,7 +1424,7 @@ export default function App() {
                       teamSize: teamSize,
                       playerName: stats.name,
                     }));
-                    speakText(`Welcome, ${stats.name}! Choose your play first.`);
+                    // Silenced per user request: only speak out runs and end of matches
                     setGamePhase('TOSS');
                   }}
                   className="w-full py-4 text-base font-black uppercase text-white bg-emerald-500 hover:bg-emerald-400 rounded-full border-b-4 border-emerald-700 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg"
@@ -1068,7 +1435,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     setGamePhase('MULTIPLAYER');
-                    speakText("Entering multiplayer rooms and friends deck.");
+                    // Silenced per user request: only speak out runs and end of matches
                   }}
                   className="w-full py-4 text-base font-black uppercase text-white bg-indigo-600 hover:bg-indigo-500 rounded-full border-b-4 border-indigo-850 active:border-b-0 active:translate-y-1 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg"
                 >
@@ -1098,6 +1465,33 @@ export default function App() {
                       ? '🏏 You are hitting runs!' 
                       : '🥎 Catch compile! You are bowling.'}
                   </p>
+
+                  {/* Live Personality Toggle */}
+                  <div className="inline-flex items-center gap-1.5 py-0.5 px-2 mt-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-full text-[9px] font-black text-purple-800 transition-all select-none">
+                    <span className="flex items-center gap-1">
+                      <Bot className="w-3.5 h-3.5 text-purple-600 animate-bounce-subtle" />
+                      Bot: <span className="uppercase font-extrabold">{personality === 'friendly' ? 'Gentle' : personality === 'competitive' ? 'Rival' : personality === 'savage' ? 'Hostel' : 'Silent'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const order: Array<'silent' | 'friendly' | 'competitive' | 'savage'> = ['silent', 'friendly', 'competitive', 'savage'];
+                        const nextIndex = (order.indexOf(personality) + 1) % order.length;
+                        const nextP = order[nextIndex];
+                        setPersonality(nextP);
+                        
+                        let speakMsg = '';
+                        if (nextP === 'silent') speakMsg = "Silent mode.";
+                        else if (nextP === 'friendly') speakMsg = "Switched to Gentle.";
+                        else if (nextP === 'competitive') speakMsg = "Switched to Rival.";
+                        else if (nextP === 'savage') speakMsg = "Savage mode activated!";
+                        // Silenced per user request: only speak out runs and end of matches
+                      }}
+                      className="px-1.5 py-0.5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-full uppercase text-[7px] cursor-pointer transition-colors"
+                    >
+                      Cycle
+                    </button>
+                  </div>
                   
                   {match.teamSize > 1 && (
                     <div className="inline-flex items-center gap-1.5 mt-1.5 py-0.5 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[9px] font-bold text-slate-600">
@@ -1194,9 +1588,20 @@ export default function App() {
                 </div>
 
                 {/* Right Pitch Computer Hand */}
-                <div className="flex flex-col items-center p-3 bg-emerald-50 rounded-2xl border-2 border-emerald-100 relative overflow-hidden">
-                  <div className="absolute inset-0 border-l border-[#86efac] opacity-50 pointer-events-none" />
-                  <div className="absolute bottom-0 inset-x-0 h-4 bg-[#86efac]/20 pointer-events-none" />
+                <div className="flex flex-col items-center p-3 bg-emerald-50 rounded-2xl border-2 border-emerald-100 relative overflow-visible">
+                  <div className="absolute inset-0 border-l border-[#86efac] opacity-50 pointer-events-none rounded-2xl overflow-hidden" />
+                  <div className="absolute bottom-0 inset-x-0 h-4 bg-[#86efac]/20 pointer-events-none rounded-b-2xl overflow-hidden" />
+
+                  {/* Witty Computer Commentary Speech Bubble */}
+                  {compSledge && (
+                    <div className="absolute -top-14 left-2 right-2 bg-indigo-600 border-2 border-indigo-400 rounded-xl px-2.5 py-2 shadow-lg animate-bounce-subtle z-30">
+                      {/* Caret pointing down */}
+                      <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-2.5 h-2.5 bg-indigo-600 border-r-2 border-b-2 border-indigo-400 transform rotate-45" />
+                      <p className="text-[10px] font-extrabold text-white leading-tight text-center italic">
+                        "{compSledge}"
+                      </p>
+                    </div>
+                  )}
 
                   <div className="text-xs font-black text-slate-800 flex items-center gap-1 z-10">
                     <span className="h-2 w-2 rounded-full bg-blue-400" />
@@ -1387,6 +1792,16 @@ export default function App() {
               stats={stats}
               onUpdateStats={handleUpdateStats}
               inline
+              playerId={authUsername}
+              currentUsername={currentUserUsername}
+              onUsernameUpdated={(newUsername) => setCurrentUserUsername(newUsername)}
+            />
+
+            {/* Friends list and requests squad roster */}
+            <Friends
+              currentVisitorId={authUsername}
+              currentName={stats.name}
+              speakText={speakText}
             />
 
             {/* Visitors Stadium statistics hub */}

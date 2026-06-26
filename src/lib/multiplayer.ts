@@ -35,14 +35,31 @@ export interface RoomPlayer {
   uid?: string;
 }
 
+export interface TossState {
+  teamACaptainId: string;
+  teamBCaptainId: string;
+  teamATossCallerId: string | null;
+  teamBTossCallerId: string | null;
+  teamATossCallerName: string | null;
+  teamBTossCallerName: string | null;
+  teamAChoice: 'rock' | 'paper' | 'scissor' | null;
+  teamBChoice: 'rock' | 'paper' | 'scissor' | null;
+  tossWinnerTeam: 'A' | 'B' | null;
+  tossWinnerId: string | null;
+  tossWinnerName: string | null;
+  tossDecision: 'bat' | 'bowl' | null;
+  tieCount: number;
+}
+
 export interface RoomState {
   id: string; // Room code
   hostId: string;
   hostName: string;
   hostUid?: string;
   teamSize: number;
-  status: 'LOBBY' | 'PLAYING' | 'FINISHED';
+  status: 'LOBBY' | 'TOSS' | 'PLAYING' | 'FINISHED';
   players: RoomPlayer[];
+  tossState?: TossState;
   
   // Game state
   currentInnings: 1 | 2;
@@ -83,7 +100,8 @@ export interface ChatMessage {
 }
 
 export interface FriendInfo {
-  id: string; // username
+  id: string; // permanent player id
+  username?: string; // customizable username
   name: string;
   addedAt: number;
 }
@@ -301,8 +319,200 @@ export const togglePlayerReady = async (
 };
 
 // ----------------------------------------------------
-// PLAYING ACTIONS
+// PLAYING ACTIONS & TOSS ACTIONS
 // ----------------------------------------------------
+
+export const startMultiplayerToss = async (roomCode: string): Promise<void> => {
+  const code = roomCode.trim().toUpperCase();
+  const roomRef = doc(db, 'rooms', code);
+
+  const roomSnap = await getDoc(roomRef);
+  if (!roomSnap.exists()) return;
+  const data = roomSnap.data() as RoomState;
+
+  // Identify captains
+  const teamAPlayers = data.players.filter((p) => p.team === 'A');
+  const teamBPlayers = data.players.filter((p) => p.team === 'B');
+
+  // Team A Captain: Host (if in A), or first player of A
+  const captainA = teamAPlayers.find(p => p.isHost) || teamAPlayers[0];
+  // Team B Captain: Host (if in B), or first player of B
+  const captainB = teamBPlayers.find(p => p.isHost) || teamBPlayers[0];
+
+  await updateDoc(roomRef, {
+    status: 'TOSS',
+    tossState: {
+      teamACaptainId: captainA?.id || '',
+      teamBCaptainId: captainB?.id || '',
+      teamATossCallerId: null,
+      teamBTossCallerId: null,
+      teamATossCallerName: null,
+      teamBTossCallerName: null,
+      teamAChoice: null,
+      teamBChoice: null,
+      tossWinnerTeam: null,
+      tossWinnerId: null,
+      tossWinnerName: null,
+      tossDecision: null,
+      tieCount: 0
+    },
+    updatedAt: serverTimestamp()
+  });
+};
+
+export const assignTossCaller = async (
+  roomCode: string,
+  team: 'A' | 'B',
+  playerId: string,
+  playerName: string
+): Promise<void> => {
+  const code = roomCode.trim().toUpperCase();
+  const roomRef = doc(db, 'rooms', code);
+
+  await runTransaction(db, async (transaction) => {
+    const docSnap = await transaction.get(roomRef);
+    if (!docSnap.exists()) return;
+
+    const data = docSnap.data() as RoomState;
+    if (!data.tossState) return;
+
+    const updatedTossState = { ...data.tossState };
+    if (team === 'A') {
+      updatedTossState.teamATossCallerId = playerId;
+      updatedTossState.teamATossCallerName = playerName;
+    } else {
+      updatedTossState.teamBTossCallerId = playerId;
+      updatedTossState.teamBTossCallerName = playerName;
+    }
+
+    transaction.update(roomRef, {
+      tossState: updatedTossState,
+      updatedAt: serverTimestamp()
+    });
+  });
+};
+
+export const submitTossChoice = async (
+  roomCode: string,
+  playerId: string,
+  choice: 'rock' | 'paper' | 'scissor'
+): Promise<void> => {
+  const code = roomCode.trim().toUpperCase();
+  const roomRef = doc(db, 'rooms', code);
+
+  await runTransaction(db, async (transaction) => {
+    const docSnap = await transaction.get(roomRef);
+    if (!docSnap.exists()) return;
+
+    const data = docSnap.data() as RoomState;
+    if (!data.tossState) return;
+
+    const updatedTossState = { ...data.tossState };
+    
+    if (playerId === updatedTossState.teamATossCallerId) {
+      updatedTossState.teamAChoice = choice;
+    } else if (playerId === updatedTossState.teamBTossCallerId) {
+      updatedTossState.teamBChoice = choice;
+    } else {
+      throw new Error("You are not the assigned toss caller for either team.");
+    }
+
+    // Resolve if both have chosen
+    if (updatedTossState.teamAChoice && updatedTossState.teamBChoice) {
+      const choiceA = updatedTossState.teamAChoice;
+      const choiceB = updatedTossState.teamBChoice;
+
+      if (choiceA === choiceB) {
+        // Tie! Reset throws, increment tieCount
+        updatedTossState.teamAChoice = null;
+        updatedTossState.teamBChoice = null;
+        updatedTossState.tieCount += 1;
+      } else {
+        const aWins =
+          (choiceA === 'rock' && choiceB === 'scissor') ||
+          (choiceA === 'paper' && choiceB === 'rock') ||
+          (choiceA === 'scissor' && choiceB === 'paper');
+
+        if (aWins) {
+          updatedTossState.tossWinnerTeam = 'A';
+          updatedTossState.tossWinnerId = updatedTossState.teamATossCallerId;
+          updatedTossState.tossWinnerName = updatedTossState.teamATossCallerName;
+        } else {
+          updatedTossState.tossWinnerTeam = 'B';
+          updatedTossState.tossWinnerId = updatedTossState.teamBTossCallerId;
+          updatedTossState.tossWinnerName = updatedTossState.teamBTossCallerName;
+        }
+      }
+    }
+
+    transaction.update(roomRef, {
+      tossState: updatedTossState,
+      updatedAt: serverTimestamp()
+    });
+  });
+};
+
+export const makeTossDecision = async (
+  roomCode: string,
+  decision: 'bat' | 'bowl'
+): Promise<void> => {
+  const code = roomCode.trim().toUpperCase();
+  const roomRef = doc(db, 'rooms', code);
+
+  await runTransaction(db, async (transaction) => {
+    const docSnap = await transaction.get(roomRef);
+    if (!docSnap.exists()) return;
+
+    const data = docSnap.data() as RoomState;
+    if (!data.tossState || !data.tossState.tossWinnerTeam) return;
+
+    const winnerTeam = data.tossState.tossWinnerTeam;
+    
+    // Determine who bats first based on winnerTeam and their decision
+    let firstBattingTeam: 'A' | 'B' = 'A';
+    if (winnerTeam === 'A') {
+      firstBattingTeam = decision === 'bat' ? 'A' : 'B';
+    } else {
+      firstBattingTeam = decision === 'bat' ? 'B' : 'A';
+    }
+
+    const teamAPlayers = data.players.filter((p) => p.team === 'A');
+    const teamBPlayers = data.players.filter((p) => p.team === 'B');
+
+    // Set active batter and bowler based on who is batting first
+    let activeBat = '';
+    let activeBowl = '';
+    if (firstBattingTeam === 'A') {
+      activeBat = teamAPlayers[0]?.id || 'AI_BAT_1';
+      activeBowl = teamBPlayers[0]?.id || 'AI_BOWL_1';
+    } else {
+      activeBat = teamBPlayers[0]?.id || 'AI_BAT_1';
+      activeBowl = teamAPlayers[0]?.id || 'AI_BOWL_1';
+    }
+
+    const updatedTossState = { ...data.tossState, tossDecision: decision };
+
+    transaction.update(roomRef, {
+      status: 'PLAYING',
+      currentInnings: 1,
+      currentRole: firstBattingTeam === 'A' ? 'A_BAT' : 'B_BAT',
+      firstInningsBattingTeam: firstBattingTeam,
+      teamAScore: 0,
+      teamBScore: 0,
+      teamAWickets: 0,
+      teamBWickets: 0,
+      teamABalls: 0,
+      teamBBalls: 0,
+      target: null,
+      activeBatsmanId: activeBat,
+      activeBowlerId: activeBowl,
+      currentThrow: {},
+      lastThrowResult: null,
+      tossState: updatedTossState,
+      updatedAt: serverTimestamp()
+    });
+  });
+};
 
 export const startMultiplayerMatch = async (roomCode: string): Promise<void> => {
   const code = roomCode.trim().toUpperCase();
@@ -609,10 +819,15 @@ export const addFriend = async (
   
   if (uId === fId) throw new Error("You can't add yourself as a friend.");
 
+  const friendSnap = await getDoc(doc(db, 'visitors', fId));
+  const friendData = friendSnap.exists() ? friendSnap.data() : null;
+  const friendUser = friendData?.username || fId;
+
   const friendRef = doc(db, 'visitors', uId, 'friends', fId);
   await setDoc(friendRef, {
     id: fId,
     name: friendDisplayName || fId,
+    username: friendUser,
     addedAt: Date.now()
   });
 };
@@ -640,6 +855,20 @@ export const sendFriendRequest = async (
   const requestId = `${senderId}_to_${receiverId}`;
   const requestRef = doc(db, 'friendRequests', requestId);
 
+  // Check if request already exists
+  const requestSnap = await getDoc(requestRef);
+  if (requestSnap.exists()) {
+    throw new Error(`Friend request already sent to ${toName} and is pending.`);
+  }
+
+  // Auto-accept if they had already sent us a request
+  const inverseRequestId = `${receiverId}_to_${senderId}`;
+  const inverseRequestSnap = await getDoc(doc(db, 'friendRequests', inverseRequestId));
+  if (inverseRequestSnap.exists()) {
+    await acceptFriendRequest(inverseRequestId, receiverId, toName, senderId, fromName);
+    return;
+  }
+
   await setDoc(requestRef, {
     id: requestId,
     fromUser: senderId,
@@ -661,6 +890,16 @@ export const acceptFriendRequest = async (
   const senderId = fromUser.trim().toLowerCase();
   const receiverId = toUser.trim().toLowerCase();
 
+  // Fetch profiles to get latest usernames
+  const user1Snap = await getDoc(doc(db, 'visitors', senderId));
+  const user2Snap = await getDoc(doc(db, 'visitors', receiverId));
+
+  const user1Data = user1Snap.exists() ? user1Snap.data() : null;
+  const user2Data = user2Snap.exists() ? user2Snap.data() : null;
+
+  const user1Username = user1Data?.username || senderId;
+  const user2Username = user2Data?.username || receiverId;
+
   // Add mutual friendship
   const user1Ref = doc(db, 'visitors', senderId, 'friends', receiverId);
   const user2Ref = doc(db, 'visitors', receiverId, 'friends', senderId);
@@ -668,12 +907,14 @@ export const acceptFriendRequest = async (
   await setDoc(user1Ref, {
     id: receiverId,
     name: toName || receiverId,
+    username: user2Username,
     addedAt: Date.now()
   });
 
   await setDoc(user2Ref, {
     id: senderId,
     name: fromName || senderId,
+    username: user1Username,
     addedAt: Date.now()
   });
 
@@ -781,6 +1022,7 @@ export const subscribeToFriends = (
       const d = doc.data();
       friends.push({
         id: doc.id,
+        username: d.username || doc.id,
         name: d.name || doc.id,
         addedAt: d.addedAt || Date.now()
       });

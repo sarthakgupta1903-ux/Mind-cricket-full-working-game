@@ -108,6 +108,22 @@
         "createdAt": { "type": "string" }
       },
       "required": ["id", "fromUser", "fromName", "toUser", "roomCode", "status"]
+    },
+    "FriendRequest": {
+      "title": "FriendRequest",
+      "description": "A pending or accepted friendship request between two players.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fromUser": { "type": "string" },
+        "fromName": { "type": "string" },
+        "toUser": { "type": "string" },
+        "toName": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "ACCEPTED", "DECLINED"] },
+        "timestamp": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "fromUser", "fromName", "toUser", "toName", "status", "timestamp"]
     }
   },
   "firestore": {
@@ -134,6 +150,10 @@
     "/challenges/{challengeId}": {
       "schema": "Challenge",
       "description": "Stored direct match challenges"
+    },
+    "/friendRequests/{requestId}": {
+      "schema": "FriendRequest",
+      "description": "Stored friend requests between players"
     }
   }
 }

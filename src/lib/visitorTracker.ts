@@ -65,7 +65,9 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 export interface VisitorRecord {
-  id: string;
+  id: string; // Permanent, unique Player ID
+  username?: string; // Modifiable, unique Username (subject to 30 days change rule)
+  lastUsernameChangeAt?: any; // Track when the username was last updated
   uid?: string;
   name: string;
   highScore: number;
@@ -87,35 +89,77 @@ export interface MatchRecord {
   createdAt: any;
 }
 
-// Check if username is available (document doesn't exist)
-export const checkUsernameAvailable = async (username: string): Promise<boolean> => {
-  const cleanUsername = username.trim().toLowerCase();
-  if (!cleanUsername) return false;
-  
+// Check if a permanent Player ID is available (not taken as Player ID or Username)
+export const isPlayerIdAvailable = async (playerId: string): Promise<boolean> => {
+  const cleanId = playerId.trim();
+  if (!/^\d{8}$/.test(cleanId)) return false;
   try {
-    const docRef = doc(db, 'visitors', cleanUsername);
+    // 1. Check doc existence (cannot match someone else's Player ID)
+    const docRef = doc(db, 'visitors', cleanId);
     const docSnap = await getDoc(docRef);
-    return !docSnap.exists();
+    if (docSnap.exists()) return false;
+
+    // 2. Check username field (cannot match someone else's Username)
+    const q = query(collection(db, 'visitors'), where('username', '==', cleanId.toLowerCase()));
+    const snap = await getDocs(q);
+    if (!snap.empty) return false;
+
+    return true;
   } catch (error) {
-    console.error('Error checking username:', error);
+    console.error('Error checking Player ID availability:', error);
     return false;
   }
 };
 
-// Register a new user profile with a unique username
+// Check if a Username is available (not taken as Player ID or Username)
+export const isUsernameAvailable = async (username: string, excludePlayerId?: string): Promise<boolean> => {
+  const cleanUsername = username.trim().toLowerCase();
+  if (!cleanUsername) return false;
+  try {
+    // 1. Check doc existence (cannot match someone else's Player ID)
+    if (cleanUsername !== excludePlayerId) {
+      const docRef = doc(db, 'visitors', cleanUsername);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) return false;
+    }
+
+    // 2. Check if another user has this username field
+    const q = query(collection(db, 'visitors'), where('username', '==', cleanUsername));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const otherUser = snap.docs.some(doc => doc.id !== excludePlayerId);
+      if (otherUser) return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error checking username availability:', error);
+    return false;
+  }
+};
+
+// Check if username is available (re-implemented for backward compatibility)
+export const checkUsernameAvailable = async (username: string): Promise<boolean> => {
+  return isUsernameAvailable(username);
+};
+
+// Register a new user profile with both a unique Player ID and Username
 export const registerUserProfile = async (
+  playerId: string,
   username: string,
   uid: string,
   displayName: string,
   stats: { highScore: number; matchesPlayed: number; matchesWon: number }
 ): Promise<void> => {
+  const cleanPlayerId = playerId.trim().toLowerCase();
   const cleanUsername = username.trim().toLowerCase();
-  const path = `visitors/${cleanUsername}`;
+  const path = `visitors/${cleanPlayerId}`;
   
   try {
-    const docRef = doc(db, 'visitors', cleanUsername);
+    const docRef = doc(db, 'visitors', cleanPlayerId);
     await setDoc(docRef, {
-      id: cleanUsername,
+      id: cleanPlayerId,
+      username: cleanUsername,
       uid: uid,
       name: displayName || cleanUsername,
       highScore: stats.highScore || 0,
@@ -123,10 +167,86 @@ export const registerUserProfile = async (
       matchesWon: stats.matchesWon || 0,
       totalPlayTimeSeconds: 0,
       createdAt: serverTimestamp(),
+      lastUsernameChangeAt: serverTimestamp(),
       lastActive: serverTimestamp(),
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
+  }
+};
+
+// Update customizable username with 30-day limitation
+export const updateUsername = async (
+  playerId: string,
+  newUsername: string
+): Promise<{ success: boolean; message: string; nextAllowedChangeDate?: Date }> => {
+  const cleanPlayerId = playerId.trim().toLowerCase();
+  const cleanUsername = newUsername.trim().toLowerCase();
+
+  // Validate format
+  const isValid = /^[a-zA-Z0-9_-]+$/.test(cleanUsername) && cleanUsername.length >= 3 && cleanUsername.length <= 20;
+  if (!isValid) {
+    return { success: false, message: "Username must be between 3 and 20 alphanumeric characters, hyphens, or underscores." };
+  }
+
+  try {
+    const docRef = doc(db, 'visitors', cleanPlayerId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      return { success: false, message: "Player profile not found." };
+    }
+
+    const data = docSnap.data();
+    const currentUsername = data.username || '';
+
+    if (currentUsername === cleanUsername) {
+      return { success: true, message: "Username is already set to this value." };
+    }
+
+    // Check availability
+    const available = await isUsernameAvailable(cleanUsername, cleanPlayerId);
+    if (!available) {
+      return { success: false, message: "This username is already taken." };
+    }
+
+    // Check 30 days restriction
+    const lastChange = data.lastUsernameChangeAt;
+    let lastChangeMs = 0;
+    if (lastChange) {
+      if (lastChange instanceof Timestamp) {
+        lastChangeMs = lastChange.toMillis();
+      } else if (typeof lastChange === 'number') {
+        lastChangeMs = lastChange;
+      } else if (lastChange.seconds) {
+        lastChangeMs = lastChange.seconds * 1000;
+      }
+    }
+
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    
+    if (lastChangeMs > 0 && (now - lastChangeMs) < thirtyDaysMs) {
+      const remainingMs = thirtyDaysMs - (now - lastChangeMs);
+      const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+      const nextDate = new Date(lastChangeMs + thirtyDaysMs);
+      return {
+        success: false,
+        message: `You can only change your username once every 30 days. Please wait ${remainingDays} more day(s).`,
+        nextAllowedChangeDate: nextDate
+      };
+    }
+
+    // Update in database
+    await updateDoc(docRef, {
+      username: cleanUsername,
+      lastUsernameChangeAt: serverTimestamp(),
+      lastActive: serverTimestamp()
+    });
+
+    return { success: true, message: "Username successfully updated!" };
+  } catch (error: any) {
+    console.error("Error updating username:", error);
+    return { success: false, message: error.message || "Failed to update username." };
   }
 };
 
@@ -147,11 +267,12 @@ export const getUserProfileByUid = async (uid: string): Promise<VisitorRecord | 
   }
 };
 
-// Ensure unique visitor ID persists in localStorage as a fallback
+// Ensure unique visitor ID persists in localStorage as a fallback (always 8-digit numeric string)
 export const getOrCreateVisitorId = (): string => {
   let visitorId = localStorage.getItem('mind_cricket_visitor_id');
-  if (!visitorId) {
-    visitorId = `visitor_${Math.random().toString(36).substring(2, 9)}_${Date.now().toString().slice(-4)}`;
+  if (!visitorId || !/^\d{8}$/.test(visitorId)) {
+    const num = Math.floor(10000000 + Math.random() * 90000000);
+    visitorId = num.toString();
     localStorage.setItem('mind_cricket_visitor_id', visitorId);
   }
   return visitorId;
@@ -173,6 +294,7 @@ export const syncVisitorProfile = async (
       // First-time setup
       const dataToSave = {
         id: visitorId,
+        username: visitorId, // Default username to visitorId
         uid: uid || '',
         name: name || 'Anonymous Player',
         highScore: stats.highScore || 0,
@@ -197,7 +319,10 @@ export const syncVisitorProfile = async (
       const finalMatchesPlayed = Math.max(existingMatchesPlayed, stats.matchesPlayed || 0);
       const finalMatchesWon = Math.max(existingMatchesWon, stats.matchesWon || 0);
 
+      const existingUsername = existingData?.username || existingData?.id || visitorId;
+
       const updateData: any = {
+        username: existingUsername,
         name: name || existingData?.name || 'Anonymous Player',
         highScore: finalHighScore,
         matchesPlayed: finalMatchesPlayed,
